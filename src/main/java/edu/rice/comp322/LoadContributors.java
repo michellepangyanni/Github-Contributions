@@ -1,5 +1,6 @@
 package edu.rice.comp322;
 
+import edu.rice.hj.api.HjFuture;
 import okhttp3.OkHttpClient;
 import okhttp3.Request;
 import retrofit2.Retrofit;
@@ -8,7 +9,10 @@ import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Base64;
 import java.util.List;
+import java.util.stream.Collectors;
 
+import static edu.rice.hj.Module1.asyncAwait;
+import static edu.rice.hj.Module1.future;
 import static java.nio.charset.StandardCharsets.UTF_8;
 
 /**
@@ -72,11 +76,66 @@ public interface LoadContributors {
      * repositories under the given organization in parallel.
      */
     default int loadContributorsPar(String username, String password, String org)
-        throws IOException {
+            throws IOException {
+        /**
+         * This parallel solution uses futures, data-driven tasks, and streams.
+         * No Finish or async.
+         * Aggregation and post-processing of the results are performed
+         * concurrently using streams.
+         */
+        //Create the service to make the requests.
+        GitHubService service = createGitHubService(username, password);
 
-        //TODO: implement parallel implementation
-        System.err.println("Parallel Implementation not implemented");
-        return 0;
+        //Get all the repos under the given organization.
+        List<Repo> repos = service.getOrgReposCall(org).execute().body();
+        if (repos == null) {
+            System.err.println("Error making request to GitHub. Make sure token and organization name are correct.");
+            return 0;
+        } else if (repos.size() == 0) {
+            System.out.println("0 repositories found in " + org + " organization, make sure your token is correct.");
+        } else {
+            System.out.println("Found " + repos.size() + " repositories in " + org + " organization.");
+        }
+
+        //Make a list of futures, one for each repo, use no data driven futures
+        List<HjFuture<List<User>>> future_users = new ArrayList<>();
+        //Make a future for each repo, and then add each future to the list
+        for (Repo repo: repos){
+            var repo_future = future(() ->
+            {
+                List<User> tempUsers = null;
+                try{
+                    //Get repo's users.
+                    tempUsers = service.getRepContributorsCall(org, repo.name).execute().body();
+                } catch (IOException e){
+                    e.printStackTrace();
+                }
+                //If there are users
+                if (tempUsers != null){
+                    //Return users to get later
+                    return tempUsers;
+                }
+                else {
+                    return null;
+                }
+            });
+            future_users.add(repo_future);
+        }
+        //Use a string to record every user and their contributions
+        //then
+        asyncAwait(future_users, () -> {
+            List<User> users = new ArrayList<>();
+            for (HjFuture<List<User>> futures: future_users){
+                users.addAll(futures.safeGet());
+            }
+            var aggregatedUsers_test_string = users.stream().parallel()
+                    .collect(Collectors.groupingBy(user -> user, Collectors.summingInt(user -> user.contributions)));
+            var result = aggregatedUsers_test_string.entrySet().stream().parallel()
+                    .map(pair -> new User(pair.getKey().login, pair.getValue()))
+                    .sorted((a, b) -> Integer.compare(b.contributions, a.contributions)).collect(Collectors.toList());
+            updateContributors(result);
+        });
+        return repos.size();
     }
 
     /**

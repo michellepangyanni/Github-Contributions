@@ -13,8 +13,8 @@ import static junit.framework.Assert.assertTrue;
 
 class ContributorsTest{
 
-    private static String username = ""; //TODO: Change to GitHub Username
-    private static String token = ""; //TODO: Change to GitHub Token
+    private static String username = "michellepangyanni"; //TODO: Change to GitHub Username
+    private static String token = "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"; //TODO: Change to GitHub Token
 
     private static ContributorsUI contributorsUI;
 
