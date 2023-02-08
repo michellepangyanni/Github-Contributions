@@ -98,39 +98,43 @@ public interface LoadContributors {
         }
 
         //Make a list of futures, one for each repo, use no data driven futures
-        List<HjFuture<List<User>>> future_users = new ArrayList<>();
+        List<HjFuture<List<User>>> futureUsers = new ArrayList<>();
         //Make a future for each repo, and then add each future to the list
-        for (Repo repo: repos){
-            var repo_future = future(() ->
+        for (Repo repo: repos) {
+            var repoFuture = future(() ->
             {
                 List<User> tempUsers = null;
-                try{
+                try {
                     //Get repo's users.
                     tempUsers = service.getRepContributorsCall(org, repo.name).execute().body();
-                } catch (IOException e){
+                } catch (IOException e) {
                     e.printStackTrace();
                 }
                 //If there are users
-                if (tempUsers != null){
+                if (tempUsers != null) {
                     //Return users to get later
                     return tempUsers;
-                }
-                else {
+                } else {
                     return null;
                 }
             });
-            future_users.add(repo_future);
+            futureUsers.add(repoFuture);
         }
-        //Use a string to record every user and their contributions
-        //then
-        asyncAwait(future_users, () -> {
+        //Create an async await to wait for the list of futures
+        asyncAwait(futureUsers, () -> {
             List<User> users = new ArrayList<>();
-            for (HjFuture<List<User>> futures: future_users){
+            //Safe getting each future and adding all of its users to the list of users.
+            for (HjFuture<List<User>> futures: futureUsers) {
                 users.addAll(futures.safeGet());
             }
-            var aggregatedUsers_test_string = users.stream().parallel()
+            //Aggregation process
+            //Stream the list of users parallelly and collect the data,
+            // grouping by the user and summing the user distributions
+            var aggregatedUsersTestString = users.stream().parallel()
                     .collect(Collectors.groupingBy(user -> user, Collectors.summingInt(user -> user.contributions)));
-            var result = aggregatedUsers_test_string.entrySet().stream().parallel()
+            //Map to a new user with the pair’s key’s login and the pair’s value, which is the summed contributions,
+            // then I sort in ascending order and collect to a list
+            var result = aggregatedUsersTestString.entrySet().stream().parallel()
                     .map(pair -> new User(pair.getKey().login, pair.getValue()))
                     .sorted((a, b) -> Integer.compare(b.contributions, a.contributions)).collect(Collectors.toList());
             updateContributors(result);
